@@ -2,6 +2,7 @@ import os
 from contextlib import contextmanager
 from typing import Dict, Iterator, Optional
 
+import bcrypt
 import pymysql
 from pymysql.cursors import DictCursor
 
@@ -68,6 +69,47 @@ def initialize_schema() -> None:
     with primary_connection() as conn:
         with conn.cursor() as cursor:
             cursor.execute(CREATE_USERS_TABLE_SQL)
+
+    _seed_default_users()
+
+
+# Default accounts that must always exist in the system.
+# These are created once on startup and never overwritten.
+_DEFAULT_USERS = [
+    {
+        "username": "doctor1",
+        "password": "test",
+        "role": "doctor",
+        "doctor_id": "DEFAULT-DOCTOR-001",
+        "patient_id": None,
+        "user_status": "registered",
+    },
+]
+
+
+def _seed_default_users() -> None:
+    """Insert default users if they do not already exist."""
+    for user in _DEFAULT_USERS:
+        try:
+            existing = get_user_by_username(user["username"])
+            if existing is not None:
+                continue  # already seeded, skip
+
+            password_hash = bcrypt.hashpw(
+                user["password"].encode("utf-8"), bcrypt.gensalt()
+            ).decode("utf-8")
+
+            create_user(
+                username=user["username"],
+                password_hash=password_hash,
+                role=user["role"],
+                user_status=user["user_status"],
+                doctor_id=user.get("doctor_id"),
+                patient_id=user.get("patient_id"),
+            )
+            print(f"[Auth] Default user seeded: {user['username']} (role={user['role']})")
+        except pymysql.MySQLError as exc:
+            print(f"[Auth] Failed to seed default user '{user['username']}': {exc}")
 
 
 def get_user_by_username(username: str) -> Optional[Dict[str, object]]:

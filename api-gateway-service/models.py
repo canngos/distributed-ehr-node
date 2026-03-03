@@ -126,6 +126,8 @@ class AuthTokenResponse(BaseModel):
     access_token: str
     role: RoleStatus
     token_type: str = "bearer"
+    patientID: Optional[str] = None
+    userStatus: UserStatus
 
 
 class PatientUpdate(BaseModel):

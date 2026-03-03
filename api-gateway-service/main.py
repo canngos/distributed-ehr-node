@@ -307,12 +307,21 @@ async def get_all_patients(
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
 )
-async def search_patient_by_id(patient_id: str, user=Depends(require_doctor)):
+async def search_patient_by_id(patient_id: str, user=Depends(require_doctor_or_patient)):
     """
     Search for a patient by their patient_id.
 
     - **patient_id**: The patient identifier (e.g., P001)
+    - Doctors can search any patient. Patients can only search their own record.
     """
+    if user["role"] == "patient":
+        token_patient_id = user.get("patient_id")
+        if token_patient_id != patient_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: you can only access your own patient record"
+            )
+
     try:
         async with get_grpc_client() as client:
             result = await client.search_patient_by_id(patient_id)
@@ -328,7 +337,7 @@ async def search_patient_by_id(patient_id: str, user=Depends(require_doctor)):
 
 
 @app.put(
-    "/patients/{patient_uuid}",
+    "/patients/{patient_id}",
     response_model=PatientResponse,
     tags=["Patients"],
     summary="Update patient",
@@ -339,28 +348,49 @@ async def search_patient_by_id(patient_id: str, user=Depends(require_doctor)):
         500: {"model": ErrorResponse, "description": "Internal server error"}
     }
 )
-async def update_patient(patient_uuid: str, patient: PatientUpdate, user=Depends(require_doctor)):
+async def update_patient(patient_id: str, patient: PatientUpdate, user=Depends(require_doctor_or_patient)):
     """
     Update a patient's information.
 
-    - **patient_uuid**: The unique UUID of the patient
+    - **patient_id**: The business patient ID (e.g., P-2026-030)
     - All fields are optional - only provided fields will be updated
+    - Doctors can update any patient. Patients can only update their own record.
     """
+    if user["role"] == "patient":
+        token_patient_id = user.get("patient_id")
+        if token_patient_id != patient_id:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: you can only update your own patient record"
+            )
+        # Patients may only update contact info (address, phone, email)
+        if patient.demographics is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: patients cannot update demographics"
+            )
+        if patient.conditions is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied: patients cannot update conditions"
+            )
+
     try:
         # Only include fields that are not None
         patient_data = patient.model_dump(exclude_none=True)
         if not patient_data:
             raise HTTPException(status_code=400, detail="No fields to update")
 
-        # Pre-validation: Verify the patient exists before attempting update
+        # Resolve patient_id (business ID) → patient_uuid (MongoDB UUID)
         try:
             async with get_grpc_client() as client:
-                await client.get_patient(patient_uuid)
+                existing = await client.search_patient_by_id(patient_id)
+                patient_uuid = existing["id"]
         except grpc.aio.AioRpcError as e:
             if e.code() == grpc.StatusCode.NOT_FOUND:
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Patient with UUID {patient_uuid} not found"
+                    detail=f"Patient with ID {patient_id} not found"
                 )
             raise
 

@@ -85,4 +85,13 @@ def login(payload: LoginRequest):
         token_payload["patient_uuid"] = user["patient_id"]
 
     token = jwt.encode(token_payload, SECRET_KEY, algorithm=ALGORITHM)
-    return AuthTokenResponse(access_token=token, role=role)
+
+    patient_id = str(user["patient_id"]) if role == "patient" and user.get("patient_id") else None
+    user_status = str(user["user_status"])
+
+    return AuthTokenResponse(
+        access_token=token,
+        role=role,
+        patientID=patient_id,
+        userStatus=user_status,
+    )
