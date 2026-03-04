@@ -10,11 +10,11 @@ CREATE_USERS_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     user_name VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
+    password_hash VARCHAR(255) NULL,
     doctor_id VARCHAR(128) NULL,
     patient_id VARCHAR(128) NULL,
     role ENUM('patient', 'doctor') NOT NULL,
-    user_status ENUM('pending', 'registered', 'inactive') NOT NULL DEFAULT 'pending',
+    user_status ENUM('pending', 'active', 'inactive') NOT NULL DEFAULT 'pending',
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 )
@@ -70,7 +70,26 @@ def initialize_schema() -> None:
         with conn.cursor() as cursor:
             cursor.execute(CREATE_USERS_TABLE_SQL)
 
+    _migrate_users_table()
+
     _seed_default_users()
+
+def _migrate_users_table() -> None:
+    """Apply non-destructive schema/data migrations for auth.users."""
+    with primary_connection() as conn:
+        with conn.cursor() as cursor:
+            # Legacy status value used by older deployments.
+            try:
+                cursor.execute(
+                    "UPDATE users SET user_status = 'active' WHERE user_status = 'registered'"
+                )
+            except pymysql.MySQLError:
+                pass
+
+            cursor.execute("ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL")
+            cursor.execute(
+                "ALTER TABLE users MODIFY COLUMN user_status ENUM('pending','active','inactive') NOT NULL DEFAULT 'pending'"
+            )
 
 
 # Default accounts that must always exist in the system.
@@ -82,7 +101,7 @@ _DEFAULT_USERS = [
         "role": "doctor",
         "doctor_id": "DEFAULT-DOCTOR-001",
         "patient_id": None,
-        "user_status": "registered",
+        "user_status": "active",
     },
 ]
 
@@ -126,7 +145,7 @@ def get_user_by_username(username: str) -> Optional[Dict[str, object]]:
 
 def create_user(
     username: str,
-    password_hash: str,
+    password_hash: Optional[str],
     role: str,
     user_status: str,
     doctor_id: Optional[str] = None,
@@ -142,3 +161,16 @@ def create_user(
                 query,
                 (username, password_hash, doctor_id, patient_id, role, user_status),
             )
+
+
+def set_password_and_activate_user(username: str, password_hash: str) -> bool:
+    query = """
+    UPDATE users
+    SET password_hash = %s,
+        user_status = 'active'
+    WHERE user_name = %s AND user_status = 'pending'
+    """
+    with primary_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (password_hash, username))
+            return cursor.rowcount == 1

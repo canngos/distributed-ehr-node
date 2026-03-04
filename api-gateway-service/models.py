@@ -93,14 +93,17 @@ class RoleStatus(str, Enum):
 
 class UserStatus(str, Enum):
     PENDING = "pending"
-    REGISTERED = "registered"
+    ACTIVE = "active"
     INACTIVE = "inactive"
 
 
 class UserCreate(BaseModel):
     """Model for creating new user in the auth-database"""
     userName: str = Field(..., description="national ID number")
-    password: str = Field(..., description="user defined password(hashed)")
+    password: Optional[str] = Field(
+        None,
+        description="Optional initial password. Patients set this later via /auth/set-password",
+    )
     doctorID: Optional[str] = None
     patientID: Optional[str] = None
     role: RoleStatus
@@ -119,6 +122,12 @@ class LoginRequest(BaseModel):
     """Model for auth login"""
     userName: str = Field(..., description="Registered username")
     password: str = Field(..., description="Plain-text password")
+
+
+class SetPasswordRequest(BaseModel):
+    """Model for setting password for a pending user"""
+    userName: str = Field(..., description="Registered username")
+    password: str = Field(..., description="New plain-text password")
 
 
 class AuthTokenResponse(BaseModel):

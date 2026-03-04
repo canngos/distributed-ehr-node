@@ -169,7 +169,7 @@ def main() -> int:
     username = f"replica-test-{uuid.uuid4().hex[:8]}"
     password = "Passw0rd!"
     role = "doctor"
-    status = "registered"
+    status = "active"
 
     print(f"[INFO] API URL: {api_url}")
     print(f"[INFO] Test username: {username}")
@@ -183,10 +183,8 @@ def main() -> int:
 
     register_payload = {
         "userName": username,
-        "password": password,
         "doctorID": f"doc-{uuid.uuid4().hex[:8]}",
         "role": role,
-        "userStatus": status,
     }
     try:
         register_res = post_json(f"{api_url}/auth/register", register_payload)
@@ -198,6 +196,20 @@ def main() -> int:
         print(f"[FAIL] Register failed: status={register_res.status}, body={register_res.body}")
         return 1
     print("[PASS] Register endpoint returned 201")
+    if register_res.body.get("userStatus") != "pending":
+        print(f"[FAIL] Register status mismatch: {register_res.body}")
+        return 1
+
+    set_password_res = post_json(
+        f"{api_url}/auth/set-password",
+        {"userName": username, "password": password},
+    )
+    if set_password_res.status != 200:
+        print(
+            f"[FAIL] Set password failed: status={set_password_res.status}, body={set_password_res.body}"
+        )
+        return 1
+    print("[PASS] Set password endpoint returned 200")
 
     login_res = post_json(
         f"{api_url}/auth/login",
