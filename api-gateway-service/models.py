@@ -121,6 +121,13 @@ class LoginRequest(BaseModel):
     password: str = Field(..., description="Plain-text password")
 
 
+class SetPasswordRequest(BaseModel):
+    """Model for setting a new password on a PENDING patient account"""
+    userName: str = Field(..., description="Registered username of the patient")
+    currentPassword: str = Field(..., description="Current (temporary) password")
+    newPassword: str = Field(..., description="New password to set")
+
+
 class AuthTokenResponse(BaseModel):
     """Login response model"""
     access_token: str

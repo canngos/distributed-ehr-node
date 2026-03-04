@@ -142,3 +142,16 @@ def create_user(
                 query,
                 (username, password_hash, doctor_id, patient_id, role, user_status),
             )
+
+
+def update_user_password_and_status(username: str, new_password_hash: str, new_status: str) -> None:
+    """Update the password hash and user_status for the given username."""
+    query = """
+    UPDATE users
+    SET password_hash = %s, user_status = %s
+    WHERE user_name = %s
+    """
+    with primary_connection() as conn:
+        with conn.cursor() as cursor:
+            cursor.execute(query, (new_password_hash, new_status, username))
+
