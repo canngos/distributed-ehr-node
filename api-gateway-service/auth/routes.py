@@ -4,8 +4,8 @@ from jose import jwt
 import os
 import pymysql
 
-from models import AuthTokenResponse, LoginRequest, UserCreate
-from .mysql_store import create_user, get_user_by_username
+from models import AuthTokenResponse, LoginRequest, SetPasswordRequest, UserCreate
+from .mysql_store import create_user, get_user_by_username, update_user_password_and_status
 from .security import hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -95,3 +95,58 @@ def login(payload: LoginRequest):
         patientID=patient_id,
         userStatus=user_status,
     )
+
+
+@router.post("/set-password", status_code=status.HTTP_200_OK)
+def set_password(payload: SetPasswordRequest):
+    """
+    Allows a PENDING patient account to set a new password.
+    After a successful update the account status is changed to REGISTERED.
+    Only works for patient accounts whose current status is 'pending'.
+    """
+    try:
+        user = get_user_by_username(payload.userName)
+    except pymysql.MySQLError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Auth database unavailable: {exc}",
+        ) from exc
+
+    if user is None or not verify_password(payload.currentPassword, str(user["password_hash"])):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your current password is incorrect. Please provide the correct temporary password to set a new password.",
+        )
+
+    if str(user["role"]) != "patient":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only patient accounts can change their temporary password.",
+        )
+
+    if str(user["user_status"]) != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Account is not in PENDING status. Password has already been set.",
+        )
+
+    new_hash = hash_password(payload.newPassword)
+
+    try:
+        update_user_password_and_status(
+            username=payload.userName,
+            new_password_hash=new_hash,
+            new_status="registered",
+        )
+    except pymysql.MySQLError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Auth database unavailable: {exc}",
+        ) from exc
+
+    return {
+        "message": "Password updated successfully. Account is now REGISTERED.",
+        "userName": payload.userName,
+        "userStatus": "registered",
+    }
+
